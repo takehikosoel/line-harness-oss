@@ -7,10 +7,22 @@ import { adminAuth } from '../routes/admin-auth.js';
 import type { Env } from '../index.js';
 
 vi.mock('@line-crm/db', () => ({
+  ADMIN_SESSION_TOKEN_PREFIX: 'lhs_',
   getStaffByApiKey: vi.fn(async (_db: unknown, token: string) => {
     if (token !== 'staff-key') return null;
     return { id: 'staff-1', name: 'Staff One', role: 'admin' };
   }),
+  getStaffBySessionToken: vi.fn(async (_db: unknown, token: string) => token === 'lhs_session' ? { id: 'staff-1', name: 'Staff One', role: 'admin' } : null),
+  createAdminSession: vi.fn(async () => ({ token: 'lhs_session', id: 'session-1', expiresAt: '2099-01-01T00:00:00.000+09:00' })),
+  deleteAdminSession: vi.fn(async () => undefined),
+  deleteAdminSessionsForStaff: vi.fn(async () => undefined),
+  getStaffById: vi.fn(async () => ({ id: 'staff-1', name: 'Staff One', role: 'admin', password_hash: null })),
+  normalizeEmail: vi.fn((value: string) => value.trim().toLowerCase()),
+  getStaffByEmail: vi.fn(async () => null),
+  verifyPassword: vi.fn(async () => false),
+  hashPassword: vi.fn(async () => 'hash'),
+  setStaffPassword: vi.fn(async () => undefined),
+  validatePasswordStrength: vi.fn(() => null),
 }));
 
 const PAGES = 'https://your-admin.pages.dev';
@@ -76,7 +88,7 @@ describe('admin login cookie attributes', () => {
     expect(body.csrfToken).toBeTruthy();
 
     const session = cookieFor(res, 'lh_admin_session') ?? '';
-    expect(session).toContain('lh_admin_session=staff-key');
+    expect(session).toContain('lh_admin_session=lhs_session');
     expect(session).toContain('HttpOnly');
     expect(session).toContain('Secure');
     expect(session).toContain('SameSite=None');
@@ -127,6 +139,12 @@ describe('topology guard', () => {
 });
 
 describe('protected API access', () => {
+  test('accepts an lhs session cookie but rejects it as Bearer', async () => {
+    const cookieRes = await app().request('/api/protected', { headers: { Cookie: 'lh_admin_session=lhs_session' } }, crossSiteEnv());
+    expect(cookieRes.status).toBe(200);
+    const bearerRes = await app().request('/api/protected', { headers: { Authorization: 'Bearer lhs_session' } }, crossSiteEnv());
+    expect(bearerRes.status).toBe(401);
+  });
   test('accepts the admin session cookie (GET, no CSRF needed)', async () => {
     const res = await app().request('/api/protected', {
       headers: { Cookie: 'lh_admin_session=staff-key' },
