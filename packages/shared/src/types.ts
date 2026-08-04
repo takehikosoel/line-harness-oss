@@ -853,6 +853,7 @@ export interface StaffMember {
   role: 'owner' | 'admin' | 'staff';
   apiKey: string;
   isActive: boolean;
+  hasPassword?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -862,6 +863,7 @@ export interface StaffProfile {
   name: string;
   role: 'owner' | 'admin' | 'staff';
   email: string | null;
+  hasPassword?: boolean;
 }
 
 // =============================================================================

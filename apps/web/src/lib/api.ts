@@ -113,6 +113,25 @@ export function setCsrfToken(token: string | undefined | null): void {
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
+/**
+ * Non-2xx API responses. message keeps the legacy `API error: <status>` shape
+ * (existing catch blocks render e.message), while `status` lets callers
+ * branch on the code without parsing the string. `serverMessage` carries the
+ * response body's `error` field when present, so screens can surface the
+ * server's own wording instead of a generic fallback.
+ */
+export class ApiError extends Error {
+  readonly status: number
+  readonly serverMessage: string | null
+
+  constructor(status: number, serverMessage: string | null = null) {
+    super(`API error: ${status}`)
+    this.name = 'ApiError'
+    this.status = status
+    this.serverMessage = serverMessage
+  }
+}
+
 export async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const method = (options?.method ?? 'GET').toUpperCase()
   const csrfHeaders: Record<string, string> = {}
@@ -130,7 +149,18 @@ export async function fetchApi<T>(path: string, options?: RequestInit): Promise<
       ...options?.headers,
     },
   })
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  if (!res.ok) {
+    let serverMessage: string | null = null
+    try {
+      const body = await res.json() as { error?: unknown }
+      if (typeof body.error === 'string') {
+        serverMessage = body.error
+      }
+    } catch {
+      // Error responses are not guaranteed to contain JSON.
+    }
+    throw new ApiError(res.status, serverMessage)
+  }
   if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }
@@ -167,6 +197,13 @@ export type FriendListItem = FriendWithTags & Partial<{
 }>
 
 export const api = {
+  auth: {
+    changePassword: (currentPassword: string | undefined, newPassword: string) =>
+      fetchApi<ApiResponse<null>>('/api/auth/password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword }),
+      }),
+  },
   friends: {
     list: (params?: FriendListParams) => {
       const query: Record<string, string> = {}
@@ -950,7 +987,7 @@ export const api = {
     get: (id: string) =>
       fetchApi<ApiResponse<StaffMember>>(`/api/staff/${id}`),
     me: () =>
-      fetchApi<ApiResponse<{ id: string; name: string; role: string; email: string | null }>>('/api/staff/me'),
+      fetchApi<ApiResponse<{ id: string; name: string; role: string; email: string | null; hasPassword: boolean }>>('/api/staff/me'),
     create: (data: { name: string; email?: string; role: 'admin' | 'staff' }) =>
       fetchApi<ApiResponse<StaffMember>>('/api/staff', {
         method: 'POST',
@@ -965,6 +1002,13 @@ export const api = {
       fetchApi<ApiResponse<null>>(`/api/staff/${id}`, { method: 'DELETE' }),
     regenerateKey: (id: string) =>
       fetchApi<ApiResponse<{ apiKey: string }>>(`/api/staff/${id}/regenerate-key`, { method: 'POST' }),
+    setPassword: (id: string, password: string) =>
+      fetchApi<ApiResponse<null>>(`/api/staff/${id}/password`, {
+        method: 'PUT',
+        body: JSON.stringify({ password }),
+      }),
+    clearPassword: (id: string) =>
+      fetchApi<ApiResponse<null>>(`/api/staff/${id}/password`, { method: 'DELETE' }),
   },
   usersGrouped: {
     list: (opts?: {

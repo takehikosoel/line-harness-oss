@@ -310,6 +310,14 @@ fields の type: `text`, `email`, `tel`, `number`, `textarea`, `select`, `radio`
 | GET | `/api/integrations/stripe/events` | Stripe イベント一覧 | query: `friendId`, `eventType`, `limit` |
 | POST | `/api/integrations/stripe/webhook` | Stripe Webhook (認証不要) | Stripe イベントペイロード |
 
+### /api/auth/*・/api/staff/*
+
+| メソッド | パス | 説明 | リクエストボディ |
+|---------|------|------|----------------|
+| POST | `/api/auth/password` | 自分のパスワード変更 (要認証) | `{ currentPassword?, newPassword }` |
+| PUT | `/api/staff/:id/password` | パスワード設定・リセット (owner) | `{ password }` |
+| DELETE | `/api/staff/:id/password` | パスワードログイン無効化 (owner) | - |
+
 ### その他
 
 | メソッド | パス | 説明 |

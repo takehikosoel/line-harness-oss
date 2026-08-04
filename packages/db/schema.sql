@@ -699,6 +699,8 @@ CREATE TABLE IF NOT EXISTS staff_members (
   id         TEXT PRIMARY KEY,
   name       TEXT NOT NULL,
   email      TEXT,
+  password_hash TEXT,
+  password_updated_at TEXT,
   role       TEXT NOT NULL CHECK (role IN ('owner', 'admin', 'staff')),
   api_key    TEXT UNIQUE NOT NULL,
   is_active  INTEGER NOT NULL DEFAULT 1,
@@ -707,7 +709,21 @@ CREATE TABLE IF NOT EXISTS staff_members (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_members_api_key ON staff_members(api_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_members_email_unique ON staff_members(email) WHERE email IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_staff_members_role ON staff_members(role);
+
+CREATE TABLE IF NOT EXISTS admin_sessions (
+  id           TEXT PRIMARY KEY,
+  token_hash   TEXT NOT NULL UNIQUE,
+  staff_id     TEXT NOT NULL REFERENCES staff_members(id) ON DELETE CASCADE,
+  created_at   TEXT NOT NULL,
+  expires_at   TEXT NOT NULL,
+  last_used_at TEXT,
+  user_agent   TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_sessions_token_hash ON admin_sessions(token_hash);
+CREATE INDEX IF NOT EXISTS idx_admin_sessions_staff ON admin_sessions(staff_id);
+CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at);
 
 -- Reusable message templates (text or Flex) for reward messages in campaigns
 CREATE TABLE IF NOT EXISTS message_templates (

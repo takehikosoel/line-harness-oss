@@ -1,5 +1,5 @@
 import type { Context, Next } from 'hono';
-import { getStaffByApiKey } from '@line-crm/db';
+import { ADMIN_SESSION_TOKEN_PREFIX, getStaffByApiKey, getStaffBySessionToken } from '@line-crm/db';
 import type { Env } from '../index.js';
 import type { AdminSameSite } from './admin-auth-config.js';
 
@@ -42,7 +42,7 @@ function bearerToken(c: Context<Env>): string | null {
   return authHeader.slice('Bearer '.length);
 }
 
-function cookieToken(c: Context<Env>): string | null {
+export function cookieToken(c: Context<Env>): string | null {
   return parseCookieHeader(c.req.header('Cookie'))[ADMIN_AUTH_COOKIE] || null;
 }
 
@@ -128,6 +128,22 @@ export async function authenticateApiToken(
   return null;
 }
 
+/**
+ * Cookie 経由のトークンを解決する。まず admin_sessions のセッショントークンとして解決し、
+ * 該当がなければ従来どおり API キーとして解決する（移行期間中、既に API キー入りの
+ * Cookie を持っているブラウザを強制ログアウトさせないため）。
+ */
+export async function authenticateSessionToken(
+  c: Context<Env>, token: string | null,
+): Promise<AuthenticatedStaff | null> {
+  if (!token) return null;
+  if (token.startsWith(ADMIN_SESSION_TOKEN_PREFIX)) {
+    const staff = await getStaffBySessionToken(c.env.DB, token);
+    return staff ? { id: staff.id, name: staff.name, role: staff.role } : null;
+  }
+  return authenticateApiToken(c, token);
+}
+
 export async function authMiddleware(c: Context<Env>, next: Next): Promise<Response | void> {
   // Skip auth for the LINE webhook endpoint — it uses signature verification instead
   // Skip auth for OpenAPI docs — public documentation
@@ -185,9 +201,9 @@ export async function authMiddleware(c: Context<Env>, next: Next): Promise<Respo
 
   const bearer = bearerToken(c);
   const cookie = cookieToken(c);
-  const token = bearer ?? cookie;
-
-  const staff = await authenticateApiToken(c, token);
+  const staff = bearer
+    ? await authenticateApiToken(c, bearer)
+    : await authenticateSessionToken(c, cookie);
   if (!staff) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
   }
