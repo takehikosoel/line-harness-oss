@@ -58,12 +58,20 @@ function check(key: string, max: number, windowMs: number): { ok: boolean; remai
   return { ok: true, remaining: max - entry.timestamps.length, retryAfter: 0 };
 }
 
+const LOGIN_MAX = 10;
+const LOGIN_WINDOW = 300_000;
+export function checkLoginAttempt(key: string): { ok: boolean; retryAfter: number } {
+  const { ok, retryAfter } = check(key, LOGIN_MAX, LOGIN_WINDOW);
+  return { ok, retryAfter };
+}
+
 // ---------------------------------------------------------------------------
 // Paths that are unauthenticated (lower limit, keyed by IP)
 // ---------------------------------------------------------------------------
 
 const UNAUTHENTICATED_PATTERNS: Array<string | RegExp> = [
   '/webhook',
+  '/api/auth/login',
   /^\/api\/forms\/[^/]+\/submit$/,
 ];
 
@@ -73,7 +81,7 @@ function isUnauthenticatedPath(path: string): boolean {
   );
 }
 
-function getClientIp(c: Context): string {
+export function getClientIp(c: Context): string {
   return (
     c.req.header('cf-connecting-ip') ||
     c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||

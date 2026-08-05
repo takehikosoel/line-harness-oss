@@ -56,6 +56,16 @@ CREATE TABLE ad_platforms (
   updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now', '+9 hours'))
 );
 
+CREATE TABLE admin_sessions (
+  id           TEXT PRIMARY KEY,
+  token_hash   TEXT NOT NULL UNIQUE,
+  staff_id     TEXT NOT NULL REFERENCES staff_members(id) ON DELETE CASCADE,
+  created_at   TEXT NOT NULL,
+  expires_at   TEXT NOT NULL,
+  last_used_at TEXT,
+  user_agent   TEXT
+);
+
 CREATE TABLE admin_users (
   id            TEXT PRIMARY KEY,
   email         TEXT NOT NULL UNIQUE,
@@ -732,6 +742,8 @@ CREATE TABLE staff_members (
   id         TEXT PRIMARY KEY,
   name       TEXT NOT NULL,
   email      TEXT,
+  password_hash TEXT,
+  password_updated_at TEXT,
   role       TEXT NOT NULL CHECK (role IN ('owner', 'admin', 'staff')),
   api_key    TEXT UNIQUE NOT NULL,
   is_active  INTEGER NOT NULL DEFAULT 1,
@@ -843,6 +855,12 @@ CREATE INDEX idx_ad_conversion_logs_friend ON ad_conversion_logs (friend_id);
 CREATE INDEX idx_ad_conversion_logs_platform ON ad_conversion_logs (ad_platform_id);
 
 CREATE INDEX idx_ad_conversion_logs_status ON ad_conversion_logs (status);
+
+CREATE INDEX idx_admin_sessions_expires ON admin_sessions(expires_at);
+
+CREATE INDEX idx_admin_sessions_staff ON admin_sessions(staff_id);
+
+CREATE UNIQUE INDEX idx_admin_sessions_token_hash ON admin_sessions(token_hash);
 
 CREATE INDEX idx_affiliate_clicks_affiliate ON affiliate_clicks (affiliate_id);
 
@@ -991,6 +1009,8 @@ CREATE INDEX idx_shifts_staff_date ON staff_shifts (staff_id, work_date);
 CREATE INDEX idx_staff_account_sort ON staff (line_account_id, sort_order);
 
 CREATE UNIQUE INDEX idx_staff_members_api_key ON staff_members(api_key);
+
+CREATE UNIQUE INDEX idx_staff_members_email_unique ON staff_members(email) WHERE email IS NOT NULL;
 
 CREATE INDEX idx_staff_members_role ON staff_members(role);
 

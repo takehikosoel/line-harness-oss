@@ -4,6 +4,8 @@ export interface StaffMember {
   id: string;
   name: string;
   email: string | null;
+  password_hash: string | null;
+  password_updated_at: string | null;
   role: 'owner' | 'admin' | 'staff';
   api_key: string;
   is_active: number;
@@ -29,6 +31,18 @@ function generateApiKey(): string {
   crypto.getRandomValues(bytes);
   const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
   return `lh_${hex}`;
+}
+
+export function normalizeEmail(email: string | null | undefined): string | null {
+  const normalized = email?.trim().toLowerCase() ?? '';
+  return normalized || null;
+}
+
+export async function getStaffByEmail(db: D1Database, email: string): Promise<StaffMember | null> {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+  return db.prepare('SELECT * FROM staff_members WHERE email = ? AND is_active = 1')
+    .bind(normalized).first<StaffMember>();
 }
 
 export async function getStaffByApiKey(
@@ -71,7 +85,7 @@ export async function createStaffMember(
       `INSERT INTO staff_members (id, name, email, role, api_key, is_active, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
     )
-    .bind(id, input.name, input.email ?? null, input.role, apiKey, now, now)
+    .bind(id, input.name, normalizeEmail(input.email), input.role, apiKey, now, now)
     .run();
 
   return (await db
@@ -90,7 +104,7 @@ export async function updateStaffMember(
   const values: (string | number | null)[] = [now];
 
   if (input.name !== undefined) { sets.push('name = ?'); values.push(input.name); }
-  if (input.email !== undefined) { sets.push('email = ?'); values.push(input.email ?? null); }
+  if (input.email !== undefined) { sets.push('email = ?'); values.push(normalizeEmail(input.email)); }
   if (input.role !== undefined) { sets.push('role = ?'); values.push(input.role); }
   if (input.is_active !== undefined) { sets.push('is_active = ?'); values.push(input.is_active); }
 
@@ -101,6 +115,26 @@ export async function updateStaffMember(
     .run();
 
   return db.prepare('SELECT * FROM staff_members WHERE id = ?').bind(id).first<StaffMember>();
+}
+
+export async function setStaffPassword(db: D1Database, id: string, passwordHash: string): Promise<void> {
+  const now = jstNow();
+  await db.prepare('UPDATE staff_members SET password_hash = ?, password_updated_at = ?, updated_at = ? WHERE id = ?')
+    .bind(passwordHash, now, now, id).run();
+}
+
+export async function clearStaffPassword(db: D1Database, id: string): Promise<void> {
+  await db.prepare('UPDATE staff_members SET password_hash = NULL, password_updated_at = NULL, updated_at = ? WHERE id = ?')
+    .bind(jstNow(), id).run();
+}
+
+export async function emailInUse(db: D1Database, email: string, excludeStaffId?: string): Promise<boolean> {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return false;
+  const row = excludeStaffId
+    ? await db.prepare('SELECT 1 AS found FROM staff_members WHERE email = ? AND id != ? LIMIT 1').bind(normalized, excludeStaffId).first<{ found: number }>()
+    : await db.prepare('SELECT 1 AS found FROM staff_members WHERE email = ? LIMIT 1').bind(normalized).first<{ found: number }>();
+  return Boolean(row);
 }
 
 export async function deleteStaffMember(db: D1Database, id: string): Promise<void> {
