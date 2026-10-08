@@ -279,6 +279,23 @@ async function applyRefAttribution(
         .first();
       if (recent) return;
 
+      // Referral links (entry_routes, 管理画面の「リファラルリンク」) are a
+      // friend-add funnel, not a click campaign: their step 1 is a welcome /
+      // first-contact message, so re-opening the same friend-add URL must not
+      // re-deliver it. Push only if this friend has never received step 1.
+      // tracked_links / affiliate offers keep the click-campaign re-push above.
+      if (route) {
+        const everSent = await db
+          .prepare(
+            `SELECT 1 FROM messages_log
+             WHERE friend_id = ? AND scenario_step_id = ? AND direction = 'outgoing'
+             LIMIT 1`,
+          )
+          .bind(friend.id, firstStep.id)
+          .first();
+        if (everSent) return;
+      }
+
       // INSERT OR IGNORE — null on re-clicks (already enrolled), still push.
       const enrollment = await enrollFriendInScenario(db, friend.id, effectiveScenarioId);
 
