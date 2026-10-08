@@ -44,6 +44,9 @@ if (!LIFF_ID) {
   throw new Error('LIFF ID not found. Set ?liffId= in LIFF endpoint URL or VITE_LIFF_ID env.');
 }
 const UUID_STORAGE_KEY = 'lh_uuid';
+// /api/liff/link retry while the follow webhook catches up (see linkAndAddFlow)
+const LINK_RETRY_MAX = 6;
+const LINK_RETRY_INTERVAL_MS = 1500;
 // Bot basic ID — resolved dynamically from API after liff.init()
 let BOT_BASIC_ID = '';
 
@@ -251,18 +254,29 @@ async function linkAndAddFlow() {
 
     // 1. UUID linking (always, regardless of friendship)
     const linkParams = new URLSearchParams(window.location.search);
-    const linkPromise = apiCall('/api/liff/link', {
-      method: 'POST',
-      body: JSON.stringify({
-        idToken: rawIdToken,
-        displayName: profile.displayName,
-        existingUuid: existingUuid,
-        ref: ref,
-        ig: linkParams.get('ig') || '',
-        iga: linkParams.get('iga') || '',
-        igan: linkParams.get('igan') || '',
-      }),
-    }).then(async (res) => {
+    const linkBody = JSON.stringify({
+      idToken: rawIdToken,
+      displayName: profile.displayName,
+      existingUuid: existingUuid,
+      ref: ref,
+      ig: linkParams.get('ig') || '',
+      iga: linkParams.get('iga') || '',
+      igan: linkParams.get('igan') || '',
+    });
+    // When the user adds the bot on the LINE Login consent screen
+    // (bot_prompt), LIFF opens already-friend but the follow webhook that
+    // creates the friends row can land a moment later. The first POST then
+    // gets 404 (Friend not found) and ref attribution + the referral
+    // scenario are dropped — and first-time users rarely reopen the link.
+    // Retry briefly while LINE reports friendship but the row isn't there yet.
+    const linkPromise = (async () => {
+      let res = await apiCall('/api/liff/link', { method: 'POST', body: linkBody });
+      for (let i = 0; res.status === 404 && friendship.friendFlag && i < LINK_RETRY_MAX; i++) {
+        await new Promise((r) => setTimeout(r, LINK_RETRY_INTERVAL_MS));
+        res = await apiCall('/api/liff/link', { method: 'POST', body: linkBody });
+      }
+      return res;
+    })().then(async (res) => {
       if (res.ok) {
         const data = await res.json() as { success: boolean; data?: { userId?: string } };
         if (data?.data?.userId) {
